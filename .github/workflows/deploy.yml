@@ -62,25 +62,35 @@ jobs:
           script: |
             cd /home/ubuntu/kidscafe-backend
             
-            CURRENT_PID=$(pgrep -f "kidscafe-*.jar")
+        
+            CURRENT_PID=$(lsof -t -i:8080)
+            
             if [ -z "$CURRENT_PID" ]; then
-              echo "> 현재 구동 중인 백엔드 애플리케이션이 없으므로 종료하지 않습니다."
+              echo "> 현재 8080 포트에서 구동 중인 백엔드 애플리케이션이 없으므로 종료하지 않습니다."
             else
-              echo "> 기존 애플리케이션 프로세스 종료 (PID: $CURRENT_PID)"
+              echo "> 8080 포트 점유 프로세스 발견! 안전 종료 시도 (PID: $CURRENT_PID)"
               kill -15 $CURRENT_PID
               sleep 5
+            
+              
+              RECHECK_PID=$(lsof -t -i:8080)
+              if [ ! -z "$RECHECK_PID" ]; then
+                echo "> 프로세스가 완전히 종료되지 않아 강제 종료(kill -9)를 수행합니다."
+                kill -9 $RECHECK_PID
+                sleep 2
+              fi
             fi
             
-            
+
             JAR_NAME=$(ls -tr *.jar | grep -v "plain" | tail -n 1)
             echo "> 새 애플리케이션 배포 파일명: $JAR_NAME"
             
-          
+  
             chmod +x $JAR_NAME
             nohup java -jar \
-              -DDB_URL="${{ secrets.PROD_DB_URL }}" \
-              -DDB_USERNAME="${{ secrets.PROD_DB_USERNAME }}" \
-              -DDB_PASSWORD="${{ secrets.PROD_DB_PASSWORD }}" \
+              -DDB_URL='${{ secrets.PROD_DB_URL }}' \
+              -DDB_USERNAME='${{ secrets.PROD_DB_USERNAME }}' \
+              -DDB_PASSWORD='${{ secrets.PROD_DB_PASSWORD }}' \
               $JAR_NAME > spring_app.log 2>&1 &
             
             echo "> 백엔드 자동 배포 프로세스가 정상 완료되었습니다."
