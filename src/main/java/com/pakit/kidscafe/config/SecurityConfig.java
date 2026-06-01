@@ -42,7 +42,7 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
 
         // Next.js 개발 서버 주소 허용
-        configuration.setAllowedOrigins(List.of("http://localhost:3000"));
+        configuration.setAllowedOrigins(List.of("https://dch3kids.shop", "http://localhost:3000"));
 
         // 사용할 HTTP 메서드 허용 (GET, POST, PATCH, DELETE 등 전체 허용)
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
