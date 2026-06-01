@@ -1,0 +1,88 @@
+name: Backend CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main # main 브랜치에 코드가 push되거나 PR이 merge되면 트리거
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. GitHub 저장소 코드 체크아웃
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. Java 실행 환경 세팅 (Java 17 규격)
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # 3. Gradle 빌드 속도 최적화를 위한 캐싱 설정
+      - name: Gradle Caching
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # 4. 빌드 스크립트 실행 권한 부여
+      - name: Grant Execute Permission for Gradlew
+        run: chmod +x ./gradlew
+
+      # 5. Gradle 빌드 수행 (테스트는 생략하여 배포 속도 향상)
+      # application.properties 내부에 기본값(Fallback)이 채워져 있으므로 빌드 시점에 튕기지 않습니다.
+      - name: Build with Gradle
+        run: ./gradlew clean build -x test
+
+      # 6. 빌드된 JAR 파일을 타겟 EC2 서버로 전송 (SSH)
+      - name: Transfer JAR over SSH
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.BACKEND_HOST }}
+          username: ${{ secrets.BACKEND_USERNAME }}
+          key: ${{ secrets.BACKEND_SSH_KEY }}
+          port: 22
+          source: "build/libs/*.jar"
+          target: "/home/ubuntu/kidscafe-backend"
+          strip_components: 2
+
+      # 7. EC2 서버 내부에서 기존 프로세스를 종료하고, 운영 서버 환경변수와 함께 JAR 무중단 실행
+      - name: Deploy and Restart via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.BACKEND_HOST }}
+          username: ${{ secrets.BACKEND_USERNAME }}
+          key: ${{ secrets.BACKEND_SSH_KEY }}
+          port: 22
+          script: |
+            cd /home/ubuntu/kidscafe-backend
+            
+            CURRENT_PID=$(pgrep -f "kidscafe-*.jar")
+            if [ -z "$CURRENT_PID" ]; then
+              echo "> 현재 구동 중인 백엔드 애플리케이션이 없으므로 종료하지 않습니다."
+            else
+              echo "> 기존 애플리케이션 프로세스 종료 (PID: $CURRENT_PID)"
+              kill -15 $CURRENT_PID
+              sleep 5
+            fi
+            
+            
+            JAR_NAME=$(ls -tr *.jar | grep -v "plain" | tail -n 1)
+            echo "> 새 애플리케이션 배포 파일명: $JAR_NAME"
+            
+          
+            chmod +x $JAR_NAME
+            nohup java -jar \
+              -DDB_URL="${{ secrets.PROD_DB_URL }}" \
+              -DDB_USERNAME="${{ secrets.PROD_DB_USERNAME }}" \
+              -DDB_PASSWORD="${{ secrets.PROD_DB_PASSWORD }}" \
+              $JAR_NAME > spring_app.log 2>&1 &
+            
+            echo "> 백엔드 자동 배포 프로세스가 정상 완료되었습니다."
