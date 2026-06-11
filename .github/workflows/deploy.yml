@@ -94,3 +94,5 @@ jobs:
               $JAR_NAME > spring_app.log 2>&1 &
             
             echo "> 백엔드 자동 배포 프로세스가 정상 완료되었습니다."
+            
+            
